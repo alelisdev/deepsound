@@ -87,6 +87,7 @@ if (!empty($path['page'])) {
             'login',
             'forgot-password',
             'reset-password',
+            'metamasksignup',
             'signup',
             'contact',
             'options',
@@ -204,6 +205,7 @@ if (!empty($path['page'])) {
                 exit();
             }
         }
+    
 		if (file_exists($file_location)) {
 			require_once $file_location;
 			if (!empty($errors)) {

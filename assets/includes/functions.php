@@ -551,6 +551,12 @@ function EmailExists($email = '') {
     global $db;
     return ($db->where('email', secure($email))->getValue(T_USERS, 'count(*)') > 0) ? true : false;
 }
+
+function WalletExists($wallet_address = '') {
+    global $db;
+    return ($db->where('wallet_address', secure($wallet_address))->getValue(T_USERS, 'count(*)') > 0) ? true : false;
+}
+
 function UsernameExits($username = '') {
     global $db;
     return ($db->where('username', secure($username))->getValue(T_USERS, 'count(*)') > 0) ? true : false;

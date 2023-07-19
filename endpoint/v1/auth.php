@@ -258,6 +258,102 @@ if ($option == 'signup') {
 	    }
 	}
 }
+
+if ($option == 'metamasksignup') {
+	var_dump('asd');
+	if (!empty($_POST)) {
+	    if (empty($_POST['walletAddress'])) {
+	        $errors[] = "Please check your details";
+	    } else {
+			$walletAddress = $_POST['walletAddress'];
+	        if (1) {
+
+				$insert_data = array(
+	                'username' => 'wallet_user',
+	                'password' => 'wallet_pass',
+	                'email' => 'wallet_email',
+	                'name' => 'wallet_name',
+	                'ip_address' => get_ip_address(),
+	                'active' => 1,
+	                'email_code' => 'wallet_email',
+	                'last_active' => time(),
+	                'registered' => date('Y') . '/' . intval(date('m')),
+	                'wallet_address' => $walletAddress,
+	            );
+				var_dump($insert_data);
+
+                if (!empty($_POST['android_device_id'])) {
+                    $insert_data['android_device_id'] = Secure($_POST['android_device_id']);
+                }
+                if (!empty($_POST['ios_device_id'])) {
+                    $insert_data['ios_device_id'] = Secure($_POST['ios_device_id']);
+                }
+
+	            $insert_data['language'] = $music->config->language;
+	            if (!empty($_SESSION['lang'])) {
+	                if (in_array($_SESSION['lang'], $langs)) {
+	                    $insert_data['language'] = $_SESSION['lang'];
+	                }
+	            }
+	            if (!empty($_POST["ref"])) {
+	            	$ref_user_id = $db->where("username", secure($_POST["ref"]))->getOne(T_USERS);
+	                if (!empty($ref_user_id) && is_numeric($ref_user_id)) {
+	                	if ($music->config->affiliate_type == 1) {
+	                		$insert_data["ref_user_id"] = Secure($ref_user_id);
+	                	}
+	                	else{
+	                		$insert_data["referrer"] = secure($ref_user_id);
+		                    $insert_data["src"] = secure("Referrer");
+		                    $db->where("username",$ref_user_id->username)->update(T_USERS, [
+		                        "balance" => $db->inc($music->config->amount_ref),
+		                    ]);
+	                	} 
+	                }
+	            }
+		            
+	            $user_id             = $db->insert(T_USERS, $insert_data);
+	            if (!empty($user_id)) {
+	                if ($music->config->validation == 'on') {
+	                    //  $link = $email_code . '/' . $email; 
+	                    //  $data['EMAIL_CODE'] = $link;
+	                    //  $data['USERNAME']   = $username;
+	                    //  $music->email_code = $link;
+	                    //  $music->username = $username;
+	                    //  $send_email_data = array(
+	                    //     'from_email' => $music->config->email,
+	                    //     'from_name' => $music->config->name,
+	                    //     'to_email' => $email,
+	                    //     'to_name' => $username,
+	                    //     'subject' => "Confirm your account",
+	                    //     'charSet' => 'UTF-8',
+	                    //     'message_body' => loadPage('emails/confirm-account', $data),
+	                    //     'is_html' => true
+	                    // );
+	                    // $send_message = sendMessage($send_email_data);
+	                    $data = array(
+				            'status' => 200,
+                            'wait_validation' => 1,
+                            'access_token' => $_SESSION['user_id'],
+		                    'data' => $music->user
+				        );
+	                } else {
+	                	createUserSession($user_id,'mobile');
+	                	$music->loggedin = true;
+	                    $music->user = userData($user_id);
+                        unset($music->user->password);
+	                    $data = array(
+				            'status' => 200,
+                            'wait_validation' => 0,
+                            'access_token' => $_SESSION['user_id'],
+                            'data' => $music->user
+				        );
+	                }
+	            }
+	        }
+	    }
+	}
+}
+
 if ($option == 'confirm_user_unusal_login') {
 	if (!empty($_POST['confirm_code']) && !empty($_POST['user_id'])) {
         $confirm_code = $_POST['confirm_code'];

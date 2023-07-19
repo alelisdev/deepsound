@@ -10,7 +10,7 @@ $fields = GetWelcomeFields();
 				<div class="navbar-brand">
 					<?php if( $music->mode_link == 'day' ){?>
 						<img src="{{CONFIG theme_url}}/img/logo.png?cache={{CONFIG logo_cache}}" alt="">
-					<?php } else{ ?>
+					<?php }else{ ?>
 						<img src="{{CONFIG theme_url}}/img/logo-white.png?cache={{CONFIG logo_cache}}" alt="">
 					<?php } ?>
 				</div>
@@ -76,9 +76,11 @@ $fields = GetWelcomeFields();
 						<span>{{LANG and}}</span>
 						<a href="{{LINK terms/privacy}}">{{LANG Privacy Policy}}</a>
 					</div>
-					<!-- <button type="submit" class="btn btn-primary btn-mat" id="btn-singup-submit">{{LANG Signup}}</button> -->
-					<button type="submit" class="btn btn-primary btn-mat" id="btn-singup-submit">signhh</button>
+					<button type="submit" class="btn btn-primary btn-mat" id="btn-singup-submit">{{LANG Signup}}</button>
 				</form>
+
+				<button class="btn btn-primary btn-mat mt-3" id="btn-meta-singup-submit"  onclick="walletConnect()" >Metamask Signup</button>
+
 				<div class="signup_">
 					<span>{{LANG Already have an account?}}</span>
 					<a href="#" data-dismiss="modal" data-toggle="modal" data-target="#login_box">{{LANG Login}}</a>
@@ -112,7 +114,67 @@ $fields = GetWelcomeFields();
 }
 <?php } ?>
 </style>
+
+
 <script>
+	async function walletConnect() {
+	
+	try{
+	   if (window.ethereum) {
+		   
+		  await window.ethereum.request({ method: "eth_requestAccounts" });               
+		  window.web3 = new Web3(window.ethereum);
+		  const account = web3.eth.accounts;
+		  let walletAddress = account.givenProvider.selectedAddress;
+		  console.log(walletAddress);
+		  if (walletAddress != '') {
+			$.ajax({
+				url: "{{CONFIG ajax_url}}/auth/metamasksignup?hash_id=" + getHashID() + '<?php if( isset($_GET["invite"]) && !empty($_GET["invite"]) ){ echo "&invite=".secure($_GET["invite"]);}?>',
+				method: 'POST', // The HTTP method (GET, POST, PUT, DELETE, etc.)
+				data: { walletAddress: walletAddress }, // Optional data to send with the request
+				dataType: 'json',
+				success: function (data) {
+					$("#btn-singup-submit").text("{{LANG Signup}}");
+					if (data.status == 200) {
+
+						if( typeof data.link !== "undefined" ){
+							location.href = '{{CONFIG site_url}}';
+						}
+
+						if ($('#page').attr('data-page') != 'home' && $('#page').attr('data-page') != 'forgot' && $('#page').attr('data-page') != 'reset') {
+							$('#main-header').html(data.header);
+							$('#signup_box').modal('hide');
+
+							if (Amplitude.getActiveSongMetadata().price > 0) {
+								location.href = '{{CONFIG site_url}}/interest';//window.location.href;
+							} else {
+								ajaxRedirect('interest');
+							}
+						} else {
+							location.href = '{{CONFIG site_url}}/interest';//window.location.href;
+						}
+					} else if (data.status == 400) {
+						var errros = data.errors.join("<br>");
+						$('#output-singup-errors').html(errros);
+					} else if (data.status == 403) {
+						$('#output-singup-errors').removeClass("alert-danger").addClass('alert-success');
+						$('#output-singup-errors').html(data.message);
+					}
+				},
+				error: function(xhr, status, error) {
+					// Code to execute when the request encounters an error
+					console.log('Error:', error);
+				}
+			});
+		  }
+ 
+	   } else {
+		  console.log("No wallet");
+	   }
+	}catch(e){
+	   console.log('error in connecting wallet = ', e);
+	}     
+ }
 <?php if ($music->config->password_complexity_system == 1) { ?>
 
 (function(){
@@ -244,7 +306,6 @@ $(document).ready(function() {
         	$("#btn-singup-submit").text("{{LANG Please wait..}}");
         <?php } ?>
         }, 
-		
         success: function (data) {
         	$("#btn-singup-submit").text("{{LANG Signup}}");
         	if (data.status == 200) {
@@ -276,6 +337,5 @@ $(document).ready(function() {
     }; 
 
     $('#signup-form').ajaxForm(options); 
-	
 }); 
 </script>

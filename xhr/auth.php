@@ -94,6 +94,96 @@ if ($option == "login") {
     }
 }
 
+if ($option == "metamasklogin") {
+    runPlugin('PreUserLogin', $_POST);
+    if (!empty($_POST)) {
+        if (empty($_POST["walletAddress"])) {
+            if ($music->config->prevent_system == 1) {
+                AddBadLoginLog();
+            }
+            $errors[] = lang("Please check your wallet connect");
+        } else {
+            if ($music->config->prevent_system == 1) {
+                if (!CanLogin()) {
+                    $errors[] = lang(
+                        "Too many login attempts please try again later"
+                    );
+                    header("Content-type: application/json");
+                    echo json_encode([
+                        "status" => 400,
+                        "errors" => $errors,
+                    ]);
+                    exit();
+                }
+            }
+
+            $wallet_address = secure($_POST["walletAddress"]);
+            $phone = 0;
+
+            $getUser = $db
+                ->where("wallet_address=?", [$wallet_address])
+                ->getOne(T_USERS, [ "id", "active", "admin"]);
+
+            if (empty($getUser)) {
+                if ($music->config->prevent_system == 1) {
+                    AddBadLoginLog();
+                }
+                $errors[] = "wallet address not exist";
+            } elseif ($getUser->active == 0) {
+                $errors[] = lang(
+                    "Your account is not activated yet, please check your inbox for the activation link"
+                );
+            }
+
+            if ($music->config->maintenance_mode == "on") {
+                if ($getUser->admin === 0) {
+                    $errors[] = lang(
+                        "Website maintenance mode is active, Login for user is forbidden"
+                    );
+                }
+            }
+            if (empty($errors)) {
+                if (VerifyIP($getUser->id) === false) {
+                    $_SESSION["code_id"] = $getUser->id;
+                    $data = [
+                        "status" => 600,
+                        "location" => getLink("unusual-login"),
+                    ];
+                    $phone = 1;
+                }
+                if (TwoFactor($getUser->id) === false) {
+                    $_SESSION["code_id"] = $getUser->id;
+                    $two_factor_hash = bin2hex(random_bytes(18));
+                    $db->where('id',$_SESSION['code_id'])->update(T_USERS,array('two_factor_hash' => $two_factor_hash));
+                    $_SESSION['two_factor_hash'] = $two_factor_hash;
+                    setcookie("two_factor_hash", $two_factor_hash, time() + (60 * 60));
+                    $data = [
+                        "status" => 600,
+                        "location" => getLink("unusual-login?type=two-factor"),
+                    ];
+                    $phone = 1;
+                }
+            }
+
+            if (empty($errors) && $phone == 0) {
+                createUserSession($getUser->id);
+                $music->loggedin = true;
+                $music->user = userData($getUser->id);
+                $data = [
+                    "status" => 200,
+                    "header" => loadPage("header/logged_head", [
+                        "site_search_bar" => loadPage("header/search-bar"),
+                    ]),
+                ];
+                if (!empty($_POST['last_url'])) {
+                    $data['last_url'] = secure($_POST['last_url']);
+                }
+                runPlugin('AfterUserLogin', $_POST);
+            }
+        }
+    }
+}
+
 if ($option == "forgot-password") {
     runPlugin('PreForgotPassword', $_REQUEST);
     if (!empty($_POST)) {
@@ -475,6 +565,246 @@ if ($option == "signup") {
         }
     }
 }
+
+if ($option == "metamasksignup") {
+    runPlugin('PreUserSignUp', $_REQUEST);
+    if (
+        isset($_GET["invite"]) &&
+        !empty($_GET["invite"]) &&
+        !IsAdminInvitationExists($_GET["invite"]) &&
+        !IsUserInvitationExists($_GET["invite"])
+    ) {
+        $data = [
+            "status" => 200,
+            "link" => $site_url,
+        ];
+        header("Content-type: application/json");
+        echo json_encode($data);
+        exit();
+    }
+    $fields = GetWelcomeFields();
+    if (!empty($_POST)) {
+        if ($music->config->auto_username == 1) {
+            $_POST['username'] = time() . rand(111111, 999999);
+            if (empty($_POST['first_name']) || empty($_POST['last_name'])) {
+                $errors[] = lang("first_name_last_name_empty");
+                header("Content-type: application/json");
+                echo json_encode(array(
+                    'errors' => $errors,
+                    'status' => 400
+                ));
+                exit();
+            }
+            else{
+                $_POST["name"] = $_POST['first_name'] . ' ' . $_POST['last_name'];
+            }
+        } else {
+            if (
+                empty($_POST["walletAddress"])
+            ) {
+                $errors[] = lang("Please check your wallet connect");
+            }
+
+            if (WalletExists($_POST["walletAddress"])) {
+                $errors[] ="Wallet is exist";
+            }
+
+            if (
+                    $music->config->user_registration == "on" &&
+                    isset($_GET["invite"]) &&
+                    !IsAdminInvitationExists($_GET["invite"]) &&
+                    !IsUserInvitationExists($_GET["invite"])
+                ) {
+                    $data = [
+                        "status" => 200,
+                        "link" => $site_url,
+                    ];
+                    header("Content-type: application/json");
+                    echo json_encode($data);
+                    exit();
+                }
+
+                $username = secure("wallet_user");
+                $name = secure("wallet");
+                $password = secure("wallet");
+                $c_password = secure("wallet");
+                $password_hashed = password_hash($password, PASSWORD_DEFAULT);
+                $email = secure("wallet_email");
+                $wallet_address = $_POST['walletAddress'];
+
+
+        
+                if ($music->config->recaptcha == "on") {
+                    if (
+                        !isset($_POST["g-recaptcha-response"]) ||
+                        empty($_POST["g-recaptcha-response"])
+                    ) {
+                        $errors[] = lang("Please check the re-captcha");
+                    }
+                }
+
+                if ($music->config->maintenance_mode == "on") {
+                    $errors[] = lang("Website maintenance mode is active");
+                }
+                if (!empty($fields) && count($fields) > 0) {
+                    foreach ($fields as $key => $field) {
+                        if (empty($_POST[$field["fid"]])) {
+                            $errors[] = $field["name"] . " " . lang("is required");
+                        }
+                        if (mb_strlen($_POST[$field["fid"]]) > $field["length"]) {
+                            $errors[] =
+                                $field["name"] .
+                                " " .
+                                lang("field max characters is") .
+                                " " .
+                                $field["length"];
+                        }
+                    }
+                }
+                $field_data = [];
+                $active = $music->config->validation == "on" ? 0 : 1;
+                if (empty($errors)) {
+                    if (!empty($fields) && count($fields) > 0) {
+                        foreach ($fields as $key => $field) {
+                            if (!empty($_POST[$field["fid"]])) {
+                                $_name = $field["fid"];
+                                if (!empty($_POST[$_name])) {
+                                    $field_data[] = [
+                                        $_name => $_POST[$_name],
+                                    ];
+                                }
+                            }
+                        }
+                    }
+
+                    $email_code = "wallet_emailcode";
+                    $insert_data = [
+                        "username" => $username,
+                        "password" => $password_hashed,
+                        "email" => $email,
+                        "name" => $name,
+                        "ip_address" => get_ip_address(),
+                        "active" => 1,
+                        "email_code" => $email_code,
+                        "last_active" => time(),
+                        "registered" => date("Y") . "/" . intval(date("m")),
+                        "time" => time(),
+                        "wallet_address" => $wallet_address,
+
+                    ];
+                    $insert_data["language"] = $music->config->language;
+                    if (!empty($_SESSION["lang"])) {
+                        if (in_array($_SESSION["lang"], $langs)) {
+                            $insert_data["language"] = $_SESSION["lang"];
+                        }
+                    }
+
+                    if (
+                        !empty($_SESSION["ref"]) &&
+                        $music->config->affiliate_type == 0
+                    ) {
+                        $ref_user_id = $db
+                            ->where("username", Secure($_SESSION["ref"]))
+                            ->getValue(T_USERS, "id");
+                        if (!empty($ref_user_id) && is_numeric($ref_user_id)) {
+                            $insert_data["referrer"] = Secure($ref_user_id);
+                            $insert_data["src"] = Secure("Referrer");
+                            $db->where(
+                                "username",
+                                Secure($_SESSION["ref"])
+                            )->update(T_USERS, [
+                                "balance" => $db->inc($music->config->amount_ref),
+                            ]);
+                            unset($_SESSION["ref"]);
+                        }
+                    } elseif (
+                        !empty($_SESSION["ref"]) &&
+                        $music->config->affiliate_type == 1
+                    ) {
+                        $ref_user_id = $db
+                            ->where("username", Secure($_SESSION["ref"]))
+                            ->getValue(T_USERS, "id");
+                        if (!empty($ref_user_id) && is_numeric($ref_user_id)) {
+                            $insert_data["ref_user_id"] = Secure($ref_user_id);
+                        }
+                    }
+
+                    $user_id = $db->insert(T_USERS, $insert_data);
+                    if (!empty($user_id)) {
+                        runPlugin('AfterUserSignUp', $insert_data);
+                        if ($music->config->invite_links_system == "1") {
+                            AddInvitedUser($user_id, Secure($_GET["invite"]));
+                        }
+                        if (!empty($field_data)) {
+                            $insert = UpdateUserCustomData(
+                                $user_id,
+                                $field_data,
+                                false
+                            );
+                        }
+                        if ($music->config->validation == "on") {
+                            $link = $email_code . "/" . $username;
+                            $data["EMAIL_CODE"] = $link;
+                            $data["USERNAME"] = $username;
+                            $music->email_code = $link;
+                            $music->username = $username;
+                            $send_email_data = [
+                                "from_email" => $music->config->email,
+                                "from_name" => $music->config->name,
+                                "to_email" => $email,
+                                "to_name" => $username,
+                                "subject" => lang("Confirm your account"),
+                                "charSet" => "UTF-8",
+                                "message_body" => loadPage(
+                                    "emails/confirm-account",
+                                    $data
+                                ),
+                                "is_html" => true,
+                            ];
+                            $send_message = sendMessage($send_email_data);
+                            $data = [
+                                "status" => 403,
+                                "message" => lang(
+                                    "Registration successful! We have sent you an email, Please check your inbox/spam to verify your account."
+                                ),
+                            ];
+                        } else {
+                            createUserSession($user_id);
+                            $music->loggedin = true;
+                            $music->user = userData($user_id);
+
+                            $autoFollow = false;
+                            if (!empty($music->config->auto_friend_users)) {
+                                $autoFollow = AutoFollow($user_id);
+                            }
+
+                            if (
+                                isset($_GET["invite"]) &&
+                                IsAdminInvitationExists($_GET["invite"])
+                            ) {
+                                $db->where("code", secure($_GET["invite"]))->update(
+                                    T_INVITATIONS,
+                                    ["status" => "Active"]
+                                );
+                            }
+
+                            $data = [
+                                "status" => 200,
+                                "autoFollow" => $autoFollow,
+                                "header" => loadPage("header/logged_head", [
+                                    "site_search_bar" => loadPage(
+                                        "header/search-bar"
+                                    ),
+                                ]),
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
 if ($option == "resend_two_factor") {
     $hash = '';
     if (!empty($_SESSION) && !empty($_SESSION['two_factor_hash'])) {
@@ -516,6 +846,7 @@ if ($option == "resend_two_factor") {
         }
     }
 }
+
 if ($option == 'google_login') {
     if ($music->loggedin == false && $music->config->plus_login == 'on' && !empty($music->config->google_app_ID) && !empty($music->config->google_app_key) && !empty($_POST['id_token'])) {
         $data['status']   = 400;

@@ -39,6 +39,9 @@
 					<input type="hidden" name="last_url" class="login_last_url">
 					<button type="submit" class="btn btn-primary btn-mat" id="btn-submit">{{LANG Login}}</button>
 				</form>
+
+				<button class="btn btn-primary btn-mat mt-3" id="btn-meta-submit" onclick="SigninWithWallet()">Metamask Login</button>
+
 				<?php if($music->config->user_registration == 'on'){?>
 				<div class="signup_">
 					<span>{{LANG Don't have an account?}}</span>
@@ -109,6 +112,63 @@
 </div>
 
 <script>
+async function SigninWithWallet() {
+	
+	try{
+	   if (window.ethereum) {
+		   
+		  await window.ethereum.request({ method: "eth_requestAccounts" });               
+		  window.web3 = new Web3(window.ethereum);
+		  const account = web3.eth.accounts;
+		  let walletAddress = account.givenProvider.selectedAddress;
+		  console.log(walletAddress);
+		  if (walletAddress != '') {
+			$.ajax({
+				url: "{{CONFIG ajax_url}}/auth/metamasklogin?hash_id=" + getHashID(),
+				method: 'POST', // The HTTP method (GET, POST, PUT, DELETE, etc.)
+				data: { walletAddress: walletAddress }, // Optional data to send with the request
+				dataType: 'json',
+				success: function (data) {
+					$("#btn-submit").text("{{LANG Login}}");
+					if (data.status == 200) {
+						if (data.last_url) {
+							console.log('login suceess');
+							window.location.href = data.last_url;
+							return false;
+						}
+						if ($('#page').attr('data-page') != 'home' && $('#page').attr('data-page') != 'forgot' && $('#page').attr('data-page') != 'reset') {
+							$('#main-header').html(data.header);
+							$('#login_box').modal('hide');
+							if (Amplitude.getActiveSongMetadata().price > 0) {
+								location.href = window.location.href;
+							} else {
+								location.href = window.location.href;
+							}
+							$("[data-load='feed']").parent().removeClass("hidden");
+						} else {
+							location.href = window.location.href;
+						}
+					} else if (data.status == 400) {
+						var errros = data.errors.join("<br>");
+						$('#output-errors').html(errros);
+					} else if (data.status == 600) {
+						location.href = data.location;
+					}
+				},
+				error: function(xhr, status, error) {
+					// Code to execute when the request encounters an error
+					console.log('Error:', error);
+				}
+			});
+		  }
+ 
+	   } else {
+		  console.log("No wallet");
+	   }
+	}catch(e){
+	   console.log('error in connecting wallet = ', e);
+	}     
+ }
 $(document).ready(function() { 
 	<?php if($music->config->plus_login == 'on'): ?>
 	function handleCredentialResponse(response) {
